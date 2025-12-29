@@ -94,18 +94,9 @@ module EvidenceProbe
 
       # Use predefined model set
       def use_models(preset)
-        @models_config = case preset
-                         when :frontier
-                           %w[anthropic/claude-sonnet-4-20250514 openai/gpt-4o google/gemini-2.0-flash-001]
-                         when :cheap
-                           %w[openai/gpt-4o-mini google/gemini-2.0-flash-001 anthropic/claude-3-5-haiku-20241022]
-                         when :diverse
-                           %w[anthropic/claude-sonnet-4-20250514 openai/gpt-4o google/gemini-2.0-flash-001 x-ai/grok-3-mini-beta]
-                         when :chinese
-                           %w[deepseek/deepseek-chat qwen/qwen-2.5-72b-instruct]
-                         else
-                           EvidenceProbe.configuration&.default_models || []
-                         end
+        @models_config = Configuration::MODEL_PRESETS[preset] ||
+                        EvidenceProbe.configuration&.default_models ||
+                        Configuration::MODEL_PRESETS[:frontier]
       end
 
       # Build the probe

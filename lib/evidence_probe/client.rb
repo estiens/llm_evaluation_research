@@ -23,12 +23,15 @@ module EvidenceProbe
 
     # Make a completion request
     def complete(messages:, model:, system: nil, temperature: 0.7, max_tokens: 4096, **options)
+      # Remove :system from options to avoid duplication (native Ruby, no ActiveSupport)
+      filtered_options = options.dup.tap { |o| o.delete(:system) }
+
       body = {
         model: model,
         messages: build_messages(messages, system),
         temperature: temperature,
         max_tokens: max_tokens
-      }.merge(options.except(:system))
+      }.merge(filtered_options)
 
       response = post("/chat/completions", body)
       
@@ -55,20 +58,23 @@ module EvidenceProbe
 
     def build_messages(messages, system)
       result = []
-      
+
       # Add system message if provided
       if system && !system.empty?
         result << { role: "system", content: system }
       end
-      
+
       # Add user messages
       messages.each do |msg|
+        content = msg[:content] || msg["content"]
+        raise APIError, "Message content cannot be nil or empty" if content.nil? || content.to_s.empty?
+
         result << {
           role: msg[:role] || msg["role"] || "user",
-          content: msg[:content] || msg["content"]
+          content: content
         }
       end
-      
+
       result
     end
 
@@ -82,13 +88,13 @@ module EvidenceProbe
 
     def request(method, endpoint, body = nil)
       uri = URI.parse("#{api_url}#{endpoint}")
-      
+
       retries = 0
       begin
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
         http.read_timeout = timeout
-        http.open_timeout = 30
+        http.open_timeout = timeout
 
         request = case method
                   when :post
@@ -101,39 +107,53 @@ module EvidenceProbe
 
         request["Authorization"] = "Bearer #{api_key}"
         request["Content-Type"] = "application/json"
-        request["HTTP-Referer"] = "https://github.com/estiens/evidence_probe"
+        request["Referer"] = "https://github.com/estiens/evidence_probe"
         request["X-Title"] = "EvidenceProbe"
 
         response = http.request(request)
-        
+
         case response.code.to_i
         when 200..299
           JSON.parse(response.body)
+        when 408
+          # Request timeout - retriable
+          raise RetriableError, "Request timeout (408)"
         when 429
-          # Rate limited - wait and retry
+          # Rate limited - honor Retry-After header
           wait_time = response["Retry-After"]&.to_i || (2 ** retries)
-          raise APIError, "Rate limited. Retry after #{wait_time}s"
+          raise RetriableError, "Rate limited (429). Retry after #{wait_time}s", wait_time
+        when 400, 401, 403, 404, 422
+          # Client errors - not retriable
+          raise APIError, "Client error: #{response.code} - #{response.body}"
         when 500..599
-          raise APIError, "Server error: #{response.code} - #{response.body}"
+          # Server errors - retriable
+          raise RetriableError, "Server error: #{response.code} - #{response.body}"
         else
+          # Unknown errors - not retriable
           raise APIError, "API error: #{response.code} - #{response.body}"
         end
-      rescue APIError => e
+      rescue RetriableError => e
         retries += 1
         if retries <= max_retries
-          sleep(2 ** retries)
-          retry
-        else
-          raise
-        end
-      rescue StandardError => e
-        retries += 1
-        if retries <= max_retries
-          sleep(2 ** retries)
+          # Use custom wait time for rate limits, exponential backoff for others
+          wait_time = e.wait_time || (2 ** retries)
+          sleep(wait_time)
           retry
         else
           raise APIError, "Request failed after #{max_retries} retries: #{e.message}"
         end
+      rescue JSON::ParserError => e
+        raise APIError, "Invalid JSON response: #{e.message}"
+      rescue Net::OpenTimeout, Net::ReadTimeout => e
+        retries += 1
+        if retries <= max_retries
+          sleep(2 ** retries)
+          retry
+        else
+          raise APIError, "Request timeout after #{max_retries} retries: #{e.message}"
+        end
+      rescue StandardError => e
+        raise APIError, "Request failed: #{e.message}"
       end
     end
   end

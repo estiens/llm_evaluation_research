@@ -216,11 +216,33 @@ module EvidenceProbe
     private
 
     def naive_role?(role_name)
-      %w[layperson junior engineer_naive junior_engineer].any? { |n| role_name.to_s.include?(n) }
+      # Find the role details from results
+      result = results.find { |r| r[:role] == role_name }
+      return false unless result && result[:role_details]
+
+      # Use role_type if available, fall back to string matching for backward compatibility
+      role_type = result[:role_details][:role_type] || result[:role_details]["role_type"]
+      if role_type
+        role_type.to_sym == :naive
+      else
+        # Fallback for roles without role_type set
+        %w[layperson junior engineer_naive junior_engineer].any? { |n| role_name.to_s.include?(n) }
+      end
     end
 
     def expert_role?(role_name)
-      %w[expert senior professional researcher mental_health].any? { |n| role_name.to_s.include?(n) }
+      # Find the role details from results
+      result = results.find { |r| r[:role] == role_name }
+      return false unless result && result[:role_details]
+
+      # Use role_type if available, fall back to string matching for backward compatibility
+      role_type = result[:role_details][:role_type] || result[:role_details]["role_type"]
+      if role_type
+        role_type.to_sym == :expert
+      else
+        # Fallback for roles without role_type set
+        %w[expert senior professional researcher mental_health].any? { |n| role_name.to_s.include?(n) }
+      end
     end
   end
 end

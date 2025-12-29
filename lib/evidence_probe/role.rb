@@ -5,10 +5,11 @@ module EvidenceProbe
   # Different roles can reveal different information from the same model
   class Role
     attr_reader :name, :description, :credentials, :domain_knowledge,
-                :tone, :challenge_level, :system_prompt
+                :tone, :challenge_level, :system_prompt, :role_type, :stance, :dialect
 
-    def initialize(name:, description: nil, credentials: [], domain_knowledge: [], 
-                   tone: :neutral, challenge_level: :none, system_prompt: nil)
+    def initialize(name:, description: nil, credentials: [], domain_knowledge: [],
+                   tone: :neutral, challenge_level: :none, system_prompt: nil, role_type: :neutral,
+                   stance: :neutral, dialect: :neutral)
       @name = name
       @description = description || name
       @credentials = Array(credentials)
@@ -16,28 +17,50 @@ module EvidenceProbe
       @tone = tone # :neutral, :deferential, :assertive, :challenging
       @challenge_level = challenge_level # :none, :implicit, :explicit
       @system_prompt = system_prompt
+      @role_type = role_type # :naive, :expert, :neutral
+      @stance = stance # :neutral, :mildly_concerned, :intensely_concerned, :supportive
+      @dialect = dialect # :neutral, :terse_informal, :terse_formal, :verbose_informal, :verbose_formal
     end
 
     # Generate a role preamble that can be prepended to prompts
     def preamble
       parts = []
-      
+
       # Add identity/role description
       parts << description if description && !description.empty?
-      
+
       # Add credentials if any
       if credentials.any?
         cred_text = credentials.join(", ")
         parts << "I have the following background: #{cred_text}."
       end
-      
+
       # Add domain knowledge display
       if domain_knowledge.any?
         knowledge_text = domain_knowledge.join("; ")
         parts << "I'm aware of: #{knowledge_text}."
       end
-      
+
+      # Add stance expression if not neutral
+      unless stance == :neutral
+        parts << stance_expression
+      end
+
       parts.join(" ")
+    end
+
+    # Get the stance expression text
+    def stance_expression
+      case stance
+      when :mildly_concerned
+        "I have some concerns about this."
+      when :intensely_concerned
+        "I'm very worried this could be harmful."
+      when :supportive
+        "I think this is a promising idea, but I want to verify it's sound."
+      else
+        ""
+      end
     end
 
     # Apply role context to a base prompt
@@ -61,8 +84,43 @@ module EvidenceProbe
         credentials: credentials,
         domain_knowledge: domain_knowledge,
         tone: tone,
-        challenge_level: challenge_level
+        challenge_level: challenge_level,
+        role_type: role_type,
+        stance: stance,
+        dialect: dialect
       }
+    end
+
+    # Create a variant of this role with a different stance
+    def with_stance(new_stance)
+      Role.new(
+        name: "#{name}_#{new_stance}",
+        description: description,
+        credentials: credentials,
+        domain_knowledge: domain_knowledge,
+        tone: tone,
+        challenge_level: challenge_level,
+        system_prompt: system_prompt,
+        role_type: role_type,
+        stance: new_stance,
+        dialect: dialect
+      )
+    end
+
+    # Create a variant of this role with a different dialect
+    def with_dialect(new_dialect)
+      Role.new(
+        name: "#{name}_#{new_dialect}",
+        description: description,
+        credentials: credentials,
+        domain_knowledge: domain_knowledge,
+        tone: tone,
+        challenge_level: challenge_level,
+        system_prompt: system_prompt,
+        role_type: role_type,
+        stance: stance,
+        dialect: new_dialect
+      )
     end
 
     private
@@ -89,7 +147,8 @@ module EvidenceProbe
           credentials: [],
           domain_knowledge: [],
           tone: :deferential,
-          challenge_level: :none
+          challenge_level: :none,
+          role_type: :naive
         )
       end
 
@@ -100,7 +159,8 @@ module EvidenceProbe
           credentials: ["Entry-level position in #{field}"],
           domain_knowledge: [],
           tone: :neutral,
-          challenge_level: :none
+          challenge_level: :none,
+          role_type: :naive
         )
       end
 
@@ -111,7 +171,8 @@ module EvidenceProbe
           credentials: credentials,
           domain_knowledge: knowledge,
           tone: :assertive,
-          challenge_level: :implicit
+          challenge_level: :implicit,
+          role_type: :expert
         )
       end
 
@@ -122,7 +183,8 @@ module EvidenceProbe
           credentials: credentials,
           domain_knowledge: knowledge,
           tone: :challenging,
-          challenge_level: challenge ? :explicit : :implicit
+          challenge_level: challenge ? :explicit : :implicit,
+          role_type: :expert
         )
       end
 
@@ -133,7 +195,8 @@ module EvidenceProbe
           credentials: credentials + ["Academic researcher"],
           domain_knowledge: knowledge,
           tone: :assertive,
-          challenge_level: :implicit
+          challenge_level: :implicit,
+          role_type: :expert
         )
       end
 
@@ -145,7 +208,8 @@ module EvidenceProbe
           credentials: [],
           domain_knowledge: [],
           tone: :neutral,
-          challenge_level: :none
+          challenge_level: :none,
+          role_type: :naive
         )
       end
 
@@ -167,7 +231,8 @@ module EvidenceProbe
             "Evidence on crisis intervention effectiveness"
           ],
           tone: :challenging,
-          challenge_level: :explicit
+          challenge_level: :explicit,
+          role_type: :expert
         )
       end
     end

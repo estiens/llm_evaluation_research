@@ -4,17 +4,16 @@ module EvidenceProbe
   # Scenario defines a topic/question to probe across models and roles
   class Scenario
     attr_reader :name, :description, :base_prompt, :evidence_markers,
-                :sensitivity_level, :expected_suppressions, :follow_up_prompts
+                :sensitivity_level, :expected_suppressions
 
     def initialize(name:, base_prompt:, description: nil, evidence_markers: [],
-                   sensitivity_level: :medium, expected_suppressions: [], follow_up_prompts: [])
+                   sensitivity_level: :medium, expected_suppressions: [])
       @name = name
       @description = description || name
       @base_prompt = base_prompt
       @evidence_markers = evidence_markers
       @sensitivity_level = sensitivity_level # :low, :medium, :high, :critical
       @expected_suppressions = expected_suppressions
-      @follow_up_prompts = follow_up_prompts
     end
 
     # Generate the full prompt for a given role
@@ -28,7 +27,9 @@ module EvidenceProbe
       evidence_markers.each do |marker|
         case marker
         when String
-          results[marker] = response_text.downcase.include?(marker.downcase)
+          # Use word boundary matching to avoid partial matches (e.g., "police" in "policy")
+          pattern = /\b#{Regexp.escape(marker)}\b/i
+          results[marker] = response_text.match?(pattern)
         when Regexp
           results[marker.source] = response_text.match?(marker)
         when Hash
@@ -37,8 +38,12 @@ module EvidenceProbe
           patterns = Array(marker[:patterns])
           results[marker_name] = patterns.any? do |pattern|
             case pattern
-            when String then response_text.downcase.include?(pattern.downcase)
-            when Regexp then response_text.match?(pattern)
+            when String
+              # Use word boundary matching for string patterns
+              word_pattern = /\b#{Regexp.escape(pattern)}\b/i
+              response_text.match?(word_pattern)
+            when Regexp
+              response_text.match?(pattern)
             end
           end
         end

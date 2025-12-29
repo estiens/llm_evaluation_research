@@ -9,6 +9,7 @@ require_relative 'evidence_probe/probe'
 require_relative 'evidence_probe/judge'
 require_relative 'evidence_probe/response_analyzer'
 require_relative 'evidence_probe/report_generator'
+require_relative 'evidence_probe/prompt_variator'
 require_relative 'evidence_probe/dsl'
 
 module EvidenceProbe
